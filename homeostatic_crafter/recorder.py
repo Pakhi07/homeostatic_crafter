@@ -7,22 +7,42 @@ import numpy as np
 
 
 class Recorder:
-
   def __init__(
       self, env, directory, save_stats=True, save_video=True,
       save_episode=True, video_size=(512, 512)):
-    if directory and save_stats:
-      env = StatsRecorder(env, directory)
-    if directory and save_video:
-      env = VideoRecorder(env, directory, video_size)
-    if directory and save_episode:
-      env = EpisodeRecorder(env, directory)
     self._env = env
+    self._current_obs = None
+    if directory and save_stats:
+      self._env = StatsRecorder(self._env, directory)
+    if directory and save_video:
+      self._env = VideoRecorder(self._env, directory, video_size)
+    if directory and save_episode:
+      self._env = EpisodeRecorder(self._env, directory)
 
   def __getattr__(self, name):
     if name.startswith('__'):
       raise AttributeError(name)
     return getattr(self._env, name)
+
+  @property
+  def obs(self):
+      """Return the current observation."""
+      return self._current_obs
+
+  @property
+  def env(self):
+      """Return the underlying environment."""
+      return self._env
+
+  def reset(self):
+      obs = self._env.reset()
+      self._current_obs = obs  # Update current observation
+      return obs
+
+  def step(self, action):
+      obs, reward, done, truncated, info = self._env.step(action)
+      self._current_obs = obs  # Update current observation
+      return obs, reward, done, truncated, info
 
 
 class StatsRecorder:
@@ -51,15 +71,15 @@ class StatsRecorder:
     return obs
 
   def step(self, action):
-    obs, reward, done, info = self._env.step(action)
+    obs, reward, done, truncated, info = self._env.step(action)
     self._length += 1
     self._reward += info['reward']
     if done:
-      self._stats = {'length': self._length, 'reward': round(self._reward, 1)}
+      self._stats = {'length': self._length, 'reward': round(float(self._reward), 1)}
       for key, value in info['achievements'].items():
         self._stats[f'achievement_{key}'] = value
       self._save()
-    return obs, reward, done, info
+    return obs, reward, done, truncated, info
 
   def _save(self):
     self._file.write(json.dumps(self._stats) + '\n')

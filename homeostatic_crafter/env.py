@@ -8,7 +8,7 @@ from . import engine
 from . import objects
 from . import worldgen
 
-import gymnasium as gym
+import gym
 
 DiscreteSpace = gym.spaces.Discrete
 BoxSpace = gym.spaces.Box
@@ -79,7 +79,7 @@ class Env(BaseClass):
     @property
     def observation_space(self):
         return DictSpace({
-            "obs": BoxSpace(0, 255, (3,) + tuple(self._size), np.uint8),  # pytorch order
+            "obs": BoxSpace(0, 255, tuple(self._size) + (3,), np.uint8),
             "measurements": BoxSpace(0, 1, (4,), np.float32),
         })
     
@@ -167,9 +167,12 @@ class Env(BaseClass):
             'semantic'    : self._sem_view(),
             'player_pos'  : self._player.pos,
             'reward'      : reward,
+            'homeostatic_reward': reward if self._homeostatic else 0,
             'interoception': intero_now,
             'daylight'       : self._world.daylight,
             'step'        : self._step,
+            'player_health': self._player.health,
+            'player_position': self._player.pos,
         }
         if not self._reward:
             reward = 0.0
@@ -188,7 +191,7 @@ class Env(BaseClass):
         return drive(last_norm_intero) - drive(norm_intero), self._player.get_interoception()
         
     def render(self, size=None):
-        return self.get_img(size).transpose((1, 2, 0))  # (c, w, h) --> (w, h, c)
+        return self.get_img(size).transpose((1, 0, 2))  # (c, w, h) --> (w, h, c)
     
     def get_img(self, size=None):
         size = size or self._size
@@ -200,7 +203,7 @@ class Env(BaseClass):
         border = (size - (size // self._view) * self._view) // 2
         (x, y), (w, h) = border, view.shape[:2]
         canvas[x: x + w, y: y + h] = view
-        return canvas.transpose((2, 1, 0))  # (h, w, c) -> (c, w, h)
+        return canvas  # (h, w, c) -> (c, w, h)
 
     def _obs(self, reset=False):
         vision = self.get_img()

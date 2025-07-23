@@ -1,0 +1,6 @@
+exploration_variance: 14.378086576461556
+state_entropy: 13.05430980301343
+action_entropy: 4.074298085658015
+extrinsic_reward_mean: -0.5233384370803833
+homeostatic_reward_mean: -0.5233384370803833
+health_mean: 8.35576171875
