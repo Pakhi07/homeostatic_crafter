@@ -22,4 +22,4 @@ class CompatibilityWrapper(gym.Wrapper):
         as expected by older Gym/SB3 versions.
         """
         obs, reward, done, truncated, info = self.env.step(action)
-        return obs, reward, done, info
+        return obs, reward, done or truncated, info

@@ -108,11 +108,11 @@ class VideoRecorder:
     return obs
 
   def step(self, action):
-    obs, reward, done, info = self._env.step(action)
+    obs, reward, done, truncated, info = self._env.step(action)
     self._frames.append(self._env.render(self._size))
     if done:
       self._save()
-    return obs, reward, done, info
+    return obs, reward, done, truncated, info
 
   def _save(self):
     filename = str(self._directory / (self._env.episode_name + '.mp4'))
@@ -143,7 +143,7 @@ class EpisodeRecorder:
     # Transitions are defined from the environment perspective, meaning that a
     # transition contains the action and the resulting reward and next
     # observation produced by the environment in response to said action.
-    obs, reward, done, info = self._env.step(action)
+    obs, reward, done, truncated, info = self._env.step(action)
     transition = {
         'action': action, 'image': obs, 'reward': reward, 'done': done,
     }
@@ -158,7 +158,7 @@ class EpisodeRecorder:
     self._episode.append(transition)
     if done:
       self._save()
-    return obs, reward, done, info
+    return obs, reward, done, truncated, info
 
   def _save(self):
     filename = str(self._directory / (self._env.episode_name + '.npz'))
@@ -193,12 +193,12 @@ class EpisodeName:
     return obs
 
   def step(self, action):
-    obs, reward, done, info = self._env.step(action)
+    obs, reward, done, truncated, info = self._env.step(action)
     self._length += 1
     if done:
       self._timestamp = datetime.datetime.now().strftime('%Y%m%dT%H%M%S')
       self._unlocked = sum(int(v >= 1) for v in info['achievements'].values())
-    return obs, reward, done, info
+    return obs, reward, done, truncated, info
 
   @property
   def episode_name(self):

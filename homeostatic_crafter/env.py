@@ -160,6 +160,7 @@ class Env(BaseClass):
         dead = self._player.health <= 0
         over = self._length and self._step >= self._length
         done = dead or over
+        truncated = over and not dead
         info = {
             'inventory'   : self._player.inventory.copy(),
             'achievements': self._player.achievements.copy(),
@@ -172,11 +173,10 @@ class Env(BaseClass):
             'daylight'       : self._world.daylight,
             'step'        : self._step,
             'player_health': self._player.health,
-            'player_position': self._player.pos,
         }
         if not self._reward:
             reward = 0.0
-        return obs, reward, done, False, info
+        return obs, reward, done, truncated, info
     
     def get_reward(self):
         norm_intero = self._player.get_interoception() / self._intero_normalizer

@@ -18,32 +18,53 @@ class AnalysisCallback(BaseCallback):
         self.positions = []
         self.rewards = {'extrinsic': [], 'homeostatic': []}
         self.healths = []
+        self.place_stone_actions = 0
+        self.zombies_defeated = 0
+        self.skeletons_defeated = 0
+        self.wake_ups = 0
+        self.achievements_unlocked = defaultdict(int)
 
     def _on_step(self):
         # Access info from the environment
         info = self.locals['infos'][-1]
+        action = self.locals['actions'][-1]
+        action_name = self.training_env.get_attr('action_names')[0][action]
+        
+        if action_name == 'place_stone':
+            self.place_stone_actions += 1
+
+        # Check for newly unlocked achievements in this step
+        current_achievements = info.get('achievements', {})
+        if current_achievements.get('defeat_zombie', 0) > self.achievements_unlocked.get('defeat_zombie', 0):
+            self.zombies_defeated += 1
+        
+        if current_achievements.get('defeat_skeleton', 0) > self.achievements_unlocked.get('defeat_skeleton', 0):
+            self.skeletons_defeated += 1
+
+        if current_achievements.get('wake_up', 0) > self.achievements_unlocked.get('wake_up', 0):
+            self.wake_ups += 1
+            
+        # Update our running count of achievements for the next step (only one line needed)
+        self.achievements_unlocked.update(current_achievements)
+
         self.rewards['extrinsic'].append(info.get('extrinsic_reward', info.get('reward', 0)))
         self.rewards['homeostatic'].append(info.get('homeostatic_reward', 0))
-        self.actions.append(self.locals['actions'][-1])
+        self.actions.append(action) # Use the action variable we already have
         
-        # Access observation from the environment
-        obs = self.training_env.get_attr('obs')[0]  # Get latest observation from DummyVecEnv
-        if isinstance(obs, dict):
-            obs = obs['obs']  # Extract image component for homeostatic_crafter
-        elif isinstance(obs, tuple):
-            obs = obs[0]  # Extract first element (likely the observation dictionary)
-            if isinstance(obs, dict):
-                obs = obs['obs']
+        obs = self.locals['new_obs']['obs'][0]
         state_key = str(obs.tobytes())
         self.visited_states[state_key] += 1
         
-        # Access player position and health
         self.healths.append(info.get('player_health', 0))
-        self.positions.append(info.get('player_position', (0, 0)))
+        self.positions.append(info.get('player_pos', (0, 0)))
         
-        if self.n_calls % self.log_interval == 0:
+        if self.n_calls > 0 and self.n_calls % self.log_interval == 0:
             metrics = self.compute_metrics()
-            print(f"Step {self.n_calls}: {metrics}")
+            # Log each metric to TensorBoard
+            for key, value in metrics.items():
+                self.logger.record(f'custom/{key}', value)
+            print(f"Step {self.n_calls}: Logged metrics to TensorBoard.")
+
         return True
 
     def compute_metrics(self):
@@ -64,7 +85,11 @@ class AnalysisCallback(BaseCallback):
             'action_entropy': action_entropy,
             'extrinsic_reward_mean': extrinsic_mean,
             'homeostatic_reward_mean': homeostatic_mean,
-            'health_mean': health_mean
+            'health_mean': health_mean,
+            'total_zombie_defeated': self.zombies_defeated,
+            'total_skeleton_defeated': self.skeletons_defeated,
+            'total_wake_ups': self.wake_ups,
+            'total_stones_placed': self.place_stone_actions,
         }
 
 
