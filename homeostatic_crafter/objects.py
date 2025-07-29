@@ -83,7 +83,6 @@ class Player(Object):
         self.action = 'noop'
         self.sleeping = False
         self._last_health = self.health
-        # print("health_init: ", self.health)
         self._hunger = 0
         self._thirst = 0
         self._fatigue = 0

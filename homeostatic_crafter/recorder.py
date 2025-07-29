@@ -9,8 +9,8 @@ import numpy as np
 class Recorder:
   def __init__(
       self, env, directory, save_stats=True, save_video=True,
-      save_episode=True, video_size=(512, 512)):
-    # self._env = env
+      save_episode=True, video_size=(512, 512)
+  ):
     self._current_obs = None
     if directory and save_stats:
       env = StatsRecorder(env, directory)
@@ -41,13 +41,12 @@ class Recorder:
       return obs
 
   def step(self, action):
-      obs, reward, done, truncated, info = self._env.step(action)
+      obs, reward, done, info = self._env.step(action)
       self._current_obs = obs  # Update current observation
-      return obs, reward, done, truncated, info
+      return obs, reward, done, info
 
 
 class StatsRecorder:
-
   def __init__(self, env, directory):
     self._env = env
     self._directory = pathlib.Path(directory).expanduser()
@@ -72,7 +71,7 @@ class StatsRecorder:
     return obs
 
   def step(self, action):
-    obs, reward, done, truncated, info = self._env.step(action)
+    obs, reward, done, info = self._env.step(action)
     self._length += 1
     self._reward += info['reward']
     if done:
@@ -80,7 +79,7 @@ class StatsRecorder:
       for key, value in info['achievements'].items():
         self._stats[f'achievement_{key}'] = value
       self._save()
-    return obs, reward, done, truncated, info
+    return obs, reward, done, info
 
   def _save(self):
     self._file.write(json.dumps(self._stats) + '\n')
@@ -88,7 +87,6 @@ class StatsRecorder:
 
 
 class VideoRecorder:
-
   def __init__(self, env, directory, size=(512, 512)):
     if not hasattr(env, 'episode_name'):
       env = EpisodeName(env)
@@ -109,11 +107,11 @@ class VideoRecorder:
     return obs
 
   def step(self, action):
-    obs, reward, done, truncated, info = self._env.step(action)
+    obs, reward, done, info = self._env.step(action)
     self._frames.append(self._env.render(self._size))
     if done:
       self._save()
-    return obs, reward, done, truncated, info
+    return obs, reward, done, info
 
   def _save(self):
     filename = str(self._directory / (self._env.episode_name + '.mp4'))
@@ -121,7 +119,6 @@ class VideoRecorder:
 
 
 class EpisodeRecorder:
-
   def __init__(self, env, directory):
     if not hasattr(env, 'episode_name'):
       env = EpisodeName(env)
@@ -141,10 +138,7 @@ class EpisodeRecorder:
     return obs
 
   def step(self, action):
-    # Transitions are defined from the environment perspective, meaning that a
-    # transition contains the action and the resulting reward and next
-    # observation produced by the environment in response to said action.
-    obs, reward, done, truncated, info = self._env.step(action)
+    obs, reward, done, info = self._env.step(action)
     transition = {
         'action': action, 'image': obs, 'reward': reward, 'done': done,
     }
@@ -159,11 +153,10 @@ class EpisodeRecorder:
     self._episode.append(transition)
     if done:
       self._save()
-    return obs, reward, done, truncated, info
+    return obs, reward, done, info
 
   def _save(self):
     filename = str(self._directory / (self._env.episode_name + '.npz'))
-    # Fill in zeros for keys missing at the first time step.
     for key, value in self._episode[1].items():
       if key not in self._episode[0]:
         self._episode[0][key] = np.zeros_like(value)
@@ -174,7 +167,6 @@ class EpisodeRecorder:
 
 
 class EpisodeName:
-
   def __init__(self, env):
     self._env = env
     self._timestamp = None
@@ -194,12 +186,12 @@ class EpisodeName:
     return obs
 
   def step(self, action):
-    obs, reward, done, truncated, info = self._env.step(action)
+    obs, reward, done, info = self._env.step(action)
     self._length += 1
     if done:
       self._timestamp = datetime.datetime.now().strftime('%Y%m%dT%H%M%S')
       self._unlocked = sum(int(v >= 1) for v in info['achievements'].values())
-    return obs, reward, done, truncated, info
+    return obs, reward, done, info
 
   @property
   def episode_name(self):

@@ -8,7 +8,6 @@ from . import engine
 from . import objects
 from . import worldgen
 
-import gym
 
 try:
   import gym
@@ -22,7 +21,6 @@ except ImportError:
   DictSpace = collections.namedtuple('DictSpace', 'spaces')
   BaseClass = object
 
-# from gymnasium.wrappers.frame_stack import LazyFrames
 # FPS = 30
 
 class Env(BaseClass):
@@ -43,7 +41,6 @@ class Env(BaseClass):
             # render_mode: Optional[str] = None,
             homeostatic=True,
     ):
-        
         view = np.array(view if hasattr(view, '__len__') else (view, view))
         size = np.array(size if hasattr(size, '__len__') else (size, size))
         seed = np.random.randint(0, 2 ** 31 - 1) if seed is None else seed
@@ -165,14 +162,12 @@ class Env(BaseClass):
         dead = self._player.health <= 0
         over = self._length and self._step >= self._length
         done = dead or over
-        truncated = over and not dead
         info = {
             'inventory'   : self._player.inventory.copy(),
             'achievements': self._player.achievements.copy(),
             'discount'    : 1 - float(dead),
             'semantic'    : self._sem_view(),
             'player_pos'  : self._player.pos,
-            # 'reward'      : reward,
             'reward': reward if self._homeostatic else 0,
             'interoception': intero_now,
             'daylight'       : self._world.daylight,
@@ -181,7 +176,7 @@ class Env(BaseClass):
         }
         if not self._reward:
             reward = 0.0
-        return obs, reward, done, truncated, info
+        return obs, reward, done, info
     
     def get_reward(self):
         norm_intero = self._player.get_interoception() / self._intero_normalizer

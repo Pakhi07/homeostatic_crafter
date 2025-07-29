@@ -1,5 +1,4 @@
 import argparse
-
 import homeostatic_crafter
 import stable_baselines3
 from stable_baselines3.common.callbacks import BaseCallback
@@ -7,7 +6,6 @@ from stable_baselines3.common.vec_env import DummyVecEnv, VecTransposeImage
 import numpy as np
 from collections import defaultdict
 import os
-from CompatibilityWrapper import CompatibilityWrapper
 
 class AnalysisCallback(BaseCallback):
     def __init__(self, log_interval=4096, verbose=0):
@@ -96,14 +94,14 @@ class AnalysisCallback(BaseCallback):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--env', type=str, default='homeostatic', choices=['crafter', 'homeostatic'])
-    parser.add_argument('--outdir', type=str, default=os.environ.get('SLURM_TMPDIR', 'logdir/homeostatic_reward-ppo/0'))
+    parser.add_argument('--outdir', type=str, default='logdir/homeostatic_reward-ppo/0')
     parser.add_argument('--steps', type=float, default=250000)  # Updated to 250k
     parser.add_argument('--seed', type=int, default=0)
     args = parser.parse_args()
 
     np.random.seed(args.seed)
 
-    env_class = crafter.Env if args.env == 'crafter' else homeostatic_crafter.Env
+    env_class = homeostatic_crafter.Env
     env = env_class(seed=args.seed)
     env = homeostatic_crafter.Recorder(
         env, 
@@ -113,7 +111,6 @@ def main():
         save_video=True,
     )
 
-    env = CompatibilityWrapper(env)
     env = DummyVecEnv([lambda: env])
     env = VecTransposeImage(env)
 
@@ -133,6 +130,12 @@ def main():
     )
     print(f"{args.env} training finished.")
 
+    print("\n--- Checking Model Parameters ---")
+    for name, param in model.policy.named_parameters():
+        if param.requires_grad:
+            print(f"Layer: {name}, Shape: {param.shape}")
+    print("-----------------------------\n")
+
     metrics = callback.compute_metrics()
     print(f"Final {args.env} Seed {args.seed} Metrics:")
     for key, value in metrics.items():
@@ -141,21 +144,17 @@ def main():
     try:
         final_log_path = model.logger.dir
     
-        # The directory is already created by Stable-Baselines3, but this is safe
         os.makedirs(final_log_path, exist_ok=True)
         
-        # Save the metrics file inside the final log path
         with open(f"{final_log_path}/{args.env}_seed{args.seed}_metrics.txt", 'w') as f:
             for key, value in metrics.items():
                 f.write(f"{key}: {value}\n")
                 
-        # Save the final model in the same directory
         model.save(f"{final_log_path}/{args.env}_seed{args.seed}_model")
         
         print(f"Metrics and model saved successfully to {final_log_path}")
     except Exception as e:
         print(f"Warning: Could not save to {args.outdir}: {e}")
-
 
 if __name__ == '__main__':
     main()

@@ -1,7 +1,8 @@
 import argparse
 from stable_baselines3 import PPO
 import homeostatic_crafter
-from CompatibilityWrapper import CompatibilityWrapper
+from stable_baselines3.common.vec_env import DummyVecEnv, VecTransposeImage
+
 
 def main():
     parser = argparse.ArgumentParser()
@@ -12,7 +13,6 @@ def main():
     parser.add_argument('--max_steps', type=int, default=2000, help='Max steps per evaluation episode.')
     args = parser.parse_args()
 
-    # --- 1. Set up the environment ---
     env = homeostatic_crafter.Env()
     env = homeostatic_crafter.Recorder(
         env,
@@ -21,13 +21,13 @@ def main():
         save_video=False,
         save_episode=False
     )
-    env = CompatibilityWrapper(env)
 
-    # --- 2. Load the model ---
+    env = DummyVecEnv([lambda: env])
+    env = VecTransposeImage(env)
+
     print(f"Loading model from: {args.model_path}")
     model = PPO.load(args.model_path)
 
-    # --- 3. Evaluation loop ---
     episodes_ran = 0
     obs = env.reset()
     steps_this_episode = 0
