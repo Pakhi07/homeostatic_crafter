@@ -1,7 +1,4 @@
-# enjoy.py
-
 import argparse
-# import crafter
 import stable_baselines3
 from stable_baselines3 import PPO
 from stable_baselines3.common.vec_env import DummyVecEnv, VecTransposeImage
@@ -14,24 +11,20 @@ def main():
     parser.add_argument('--env', type=str, default='homeostatic', choices=['crafter', 'homeostatic'])
     parser.add_argument('--episodes', type=int, default=100, help='Number of episodes to run for evaluation.')
     parser.add_argument('--outdir', type=str, default='logdir/evaluation', help='Directory to save evaluation stats.')
+    parser.add_argument('--max_steps', type=int, default=2000, help='Max steps per evaluation episode.')
     args = parser.parse_args()
 
     # --- 1. Set up the correct environment ---
-    if args.env == 'homeostatic':
-        print("Setting up Homeostatic Crafter for evaluation.")
-        env = homeostatic_crafter.Env()
-        # env = CompatibilityWrapper(env)
-    else:
-        print("Setting up standard Crafter for evaluation.")
-        # env = crafter.Env()
-        
+    print("Setting up Homeostatic Crafter for evaluation.")
+    env = homeostatic_crafter.Env()
+    
     # --- 2. Add the necessary wrappers ---
     # The Recorder will save the achievements to stats.jsonl
     env = homeostatic_crafter.Recorder(
         env,
         args.outdir,
         save_stats=True,
-        save_video=False, # Set to True if you want videos
+        save_video=True, # Set to True if you want videos
         save_episode=False
     )
     env = CompatibilityWrapper(env)
@@ -45,21 +38,25 @@ def main():
     # --- 4. Run the evaluation loop ---
     obs = env.reset()
     episodes_ran = 0
-
     steps_this_episode = 0
-    MAX_STEPS_PER_EVAL_EPISODE = 2000
 
     while episodes_ran < args.episodes:
         action, _states = model.predict(obs, deterministic=True)
         obs, rewards, dones, info = env.step(action)
-        
         steps_this_episode += 1
 
         # Check for timeout in addition to the done flag
-        if dones[0] or steps_this_episode >= MAX_STEPS_PER_EVAL_EPISODE:
+        timed_out = steps_this_episode >= args.max_steps
+
+        if dones[0] or timed_out:
             episodes_ran += 1
+            print(f"Episode {episodes_ran}/{args.episodes} finished (Reason: {'Timeout' if timed_out else 'Done'}).")
+
+            if timed_out:
+                print("time out")
+                obs = env.reset()
+            
             steps_this_episode = 0 # Reset step counter for next episode
-            print(f"Episode {episodes_ran}/{args.episodes} finished.")
             
     env.close()
     print(f"\nEvaluation finished. Achievement stats saved in {args.outdir}/stats.jsonl")

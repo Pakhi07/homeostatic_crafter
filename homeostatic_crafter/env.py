@@ -10,19 +10,26 @@ from . import worldgen
 
 import gym
 
-DiscreteSpace = gym.spaces.Discrete
-BoxSpace = gym.spaces.Box
-DictSpace = gym.spaces.Dict
-BaseClass = gym.Env
+try:
+  import gym
+  DiscreteSpace = gym.spaces.Discrete
+  BoxSpace = gym.spaces.Box
+  DictSpace = gym.spaces.Dict
+  BaseClass = gym.Env
+except ImportError:
+  DiscreteSpace = collections.namedtuple('DiscreteSpace', 'n')
+  BoxSpace = collections.namedtuple('BoxSpace', 'low, high, shape, dtype')
+  DictSpace = collections.namedtuple('DictSpace', 'spaces')
+  BaseClass = object
 
 # from gymnasium.wrappers.frame_stack import LazyFrames
-FPS = 30
+# FPS = 30
 
 class Env(BaseClass):
-    metadata = {
-        "render_modes": ["human", "rgb_array"],
-        "render_fps"  : FPS,
-    }
+    # metadata = {
+    #     "render_modes": ["human", "rgb_array"],
+    #     "render_fps"  : FPS,
+    # }
     
     def __init__(
             self,
@@ -33,7 +40,7 @@ class Env(BaseClass):
             length=10000,
             seed=None,
             random_internal=False,
-            render_mode: Optional[str] = None,
+            # render_mode: Optional[str] = None,
             homeostatic=True,
     ):
         
@@ -41,7 +48,7 @@ class Env(BaseClass):
         size = np.array(size if hasattr(size, '__len__') else (size, size))
         seed = np.random.randint(0, 2 ** 31 - 1) if seed is None else seed
         self._random_internal = random_internal
-        self.render_mode = render_mode
+        # self.render_mode = render_mode
 
         self._area = area
         self._view = view
@@ -91,7 +98,7 @@ class Env(BaseClass):
     def action_names(self):
         return constants.actions
     
-    def reset(self, seed=None, options=None):
+    def reset(self, seed=None):
         if seed is not None:
             self._seed = seed
 
@@ -109,7 +116,6 @@ class Env(BaseClass):
         self._unlocked = set()
         worldgen.generate_world(self._world, self._player)
         
-        reward, intero_now = self.get_reward()
         info = {
             'inventory'   : self._player.inventory.copy(),
             'achievements': self._player.achievements.copy(),
@@ -117,12 +123,12 @@ class Env(BaseClass):
             'semantic'    : self._sem_view(),
             'player_pos'  : self._player.pos,
             'reward'      : None,
-            'interoception': intero_now,
+            'interoception': self._last_intero,
             'daylight': self._world.daylight,
             'step': self._step,
+            'player_health': self._player.health,
         }
-        
-        return self._obs(reset=True), info
+        return self._obs(), info
     
     def step(self, action):
         self._step += 1
@@ -144,7 +150,6 @@ class Env(BaseClass):
         if self._homeostatic:
             reward, intero_now = self.get_reward()
         else:
-            _, intero_now = self.get_reward()
             reward = (self._player.health - self._last_health) / 10  # original reward
 
         self._last_intero = self._player.get_interoception()
@@ -167,8 +172,8 @@ class Env(BaseClass):
             'discount'    : 1 - float(dead),
             'semantic'    : self._sem_view(),
             'player_pos'  : self._player.pos,
-            'reward'      : reward,
-            'homeostatic_reward': reward if self._homeostatic else 0,
+            # 'reward'      : reward,
+            'reward': reward if self._homeostatic else 0,
             'interoception': intero_now,
             'daylight'       : self._world.daylight,
             'step'        : self._step,
@@ -191,9 +196,6 @@ class Env(BaseClass):
         return drive(last_norm_intero) - drive(norm_intero), self._player.get_interoception()
         
     def render(self, size=None):
-        return self.get_img(size).transpose((1, 0, 2))  # (c, w, h) --> (w, h, c)
-    
-    def get_img(self, size=None):
         size = size or self._size
         unit = size // self._view
         canvas = np.zeros(tuple(size) + (3,), np.uint8)
@@ -206,7 +208,7 @@ class Env(BaseClass):
         return canvas  # (h, w, c) -> (c, w, h)
 
     def _obs(self, reset=False):
-        vision = self.get_img()
+        vision = self.render()
         norm_intero = self._player.get_interoception() / self._intero_normalizer
 
         return {"obs": vision,

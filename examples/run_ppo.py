@@ -16,12 +16,13 @@ class AnalysisCallback(BaseCallback):
         self.visited_states = defaultdict(int)
         self.actions = []
         self.positions = []
-        self.rewards = {'extrinsic': [], 'homeostatic': []}
+        self.rewards = []
         self.healths = []
         self.place_stone_actions = 0
         self.zombies_defeated = 0
         self.skeletons_defeated = 0
         self.wake_ups = 0
+        self.death_count = 0
         self.achievements_unlocked = defaultdict(int)
 
     def _on_step(self):
@@ -32,6 +33,9 @@ class AnalysisCallback(BaseCallback):
         
         if action_name == 'place_stone':
             self.place_stone_actions += 1
+        
+        if info.get('discount') == 0.0:
+            self.death_count += 1
 
         # Check for newly unlocked achievements in this step
         current_achievements = info.get('achievements', {})
@@ -47,8 +51,7 @@ class AnalysisCallback(BaseCallback):
         # Update our running count of achievements for the next step (only one line needed)
         self.achievements_unlocked.update(current_achievements)
 
-        self.rewards['extrinsic'].append(info.get('extrinsic_reward', info.get('reward', 0)))
-        self.rewards['homeostatic'].append(info.get('homeostatic_reward', 0))
+        self.rewards.append(info.get('reward', 0))
         self.actions.append(action) # Use the action variable we already have
         
         obs = self.locals['new_obs']['obs'][0]
@@ -60,7 +63,6 @@ class AnalysisCallback(BaseCallback):
         
         if self.n_calls > 0 and self.n_calls % self.log_interval == 0:
             metrics = self.compute_metrics()
-            # Log each metric to TensorBoard
             for key, value in metrics.items():
                 self.logger.record(f'custom/{key}', value)
             print(f"Step {self.n_calls}: Logged metrics to TensorBoard.")
@@ -76,27 +78,23 @@ class AnalysisCallback(BaseCallback):
         action_counts = np.bincount(self.actions, minlength=self.training_env.get_attr('action_space')[0].n)
         action_probs = action_counts / (action_counts.sum() + 1e-10)
         action_entropy = -np.sum(action_probs * np.log2(action_probs + 1e-10))
-        extrinsic_mean = np.mean(self.rewards['extrinsic'])
-        homeostatic_mean = np.mean(self.rewards['homeostatic'])
+        reward_mean = np.mean(self.rewards)
         health_mean = np.mean(self.healths) if self.healths else 0
         return {
             'exploration_variance': exploration_variance,
             'state_entropy': state_entropy,
             'action_entropy': action_entropy,
-            'extrinsic_reward_mean': extrinsic_mean,
-            'homeostatic_reward_mean': homeostatic_mean,
+            'reward_homeostatic_mean': reward_mean,
             'health_mean': health_mean,
             'total_zombie_defeated': self.zombies_defeated,
             'total_skeleton_defeated': self.skeletons_defeated,
             'total_wake_ups': self.wake_ups,
             'total_stones_placed': self.place_stone_actions,
+            'total_deaths': self.death_count,
         }
-
 
 def main():
     parser = argparse.ArgumentParser()
-    # parser.add_argument('--outdir', default='logdir/crafter_reward-ppo/0')
-    # parser.add_argument('--steps', type=float, default=1e6)
     parser.add_argument('--env', type=str, default='homeostatic', choices=['crafter', 'homeostatic'])
     parser.add_argument('--outdir', type=str, default=os.environ.get('SLURM_TMPDIR', 'logdir/homeostatic_reward-ppo/0'))
     parser.add_argument('--steps', type=float, default=250000)  # Updated to 250k
@@ -107,17 +105,15 @@ def main():
 
     env_class = crafter.Env if args.env == 'crafter' else homeostatic_crafter.Env
     env = env_class(seed=args.seed)
-    print(f"{args.outdir}/{args.env}_eval")
     env = homeostatic_crafter.Recorder(
         env, 
         f"{args.outdir}/{args.env}_eval",
         save_stats=True,
         save_episode=False,
-        save_video=False,
+        save_video=True,
     )
 
     env = CompatibilityWrapper(env)
-
     env = DummyVecEnv([lambda: env])
     env = VecTransposeImage(env)
 
@@ -129,10 +125,12 @@ def main():
         seed=args.seed)
 
     callback = AnalysisCallback(log_interval=4096)
-    print(f"Starting {args.env} training with seed {args.seed}. Logs in {args.outdir}")
+    print(f"Starting {args.env} training with seed {args.seed}. Logs in {args.outdir}")  
     
-    model.learn(total_timesteps=args.steps, callback=callback)
-
+    model.learn(
+        total_timesteps=int(args.steps), 
+        callback=callback
+    )
     print(f"{args.env} training finished.")
 
     metrics = callback.compute_metrics()

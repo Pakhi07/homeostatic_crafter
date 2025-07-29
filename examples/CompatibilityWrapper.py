@@ -13,7 +13,7 @@ class CompatibilityWrapper(gym.Wrapper):
         """
         Calls the underlying environment's reset and returns only the observation.
         """
-        obs, info = self.env.reset(**kwargs)
+        obs = self.env.reset(**kwargs)
         return obs
 
     def step(self, action):
