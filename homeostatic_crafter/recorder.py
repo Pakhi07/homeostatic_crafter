@@ -10,7 +10,7 @@ class Recorder:
   def __init__(
       self, env, directory, save_stats=True, save_video=True,
       save_episode=True, video_size=(512, 512)):
-    self._env = env
+    # self._env = env
     self._current_obs = None
     if directory and save_stats:
       env = StatsRecorder(env, directory)
@@ -18,6 +18,7 @@ class Recorder:
       env = VideoRecorder(env, directory, video_size)
     if directory and save_episode:
       env = EpisodeRecorder(env, directory)
+    self._env = env
 
   def __getattr__(self, name):
     if name.startswith('__'):
@@ -35,7 +36,7 @@ class Recorder:
       return self._env
 
   def reset(self):
-      obs, _ = self._env.reset()
+      obs = self._env.reset()
       self._current_obs = obs  # Update current observation
       return obs
 
@@ -103,7 +104,7 @@ class VideoRecorder:
     return getattr(self._env, name)
 
   def reset(self):
-    obs, _ = self._env.reset()
+    obs = self._env.reset()
     self._frames = [self._env.render(self._size)]
     return obs
 
@@ -135,7 +136,7 @@ class EpisodeRecorder:
     return getattr(self._env, name)
 
   def reset(self):
-    obs, _ = self._env.reset()
+    obs = self._env.reset()
     self._episode = [{'image': obs}]
     return obs
 
@@ -186,7 +187,7 @@ class EpisodeName:
     return getattr(self._env, name)
 
   def reset(self):
-    obs, _ = self._env.reset()
+    obs = self._env.reset()
     self._timestamp = None
     self._unlocked = None
     self._length = 0

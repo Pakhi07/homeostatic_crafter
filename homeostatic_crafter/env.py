@@ -128,7 +128,7 @@ class Env(BaseClass):
             'step': self._step,
             'player_health': self._player.health,
         }
-        return self._obs(), info
+        return self._obs()
     
     def step(self, action):
         self._step += 1
