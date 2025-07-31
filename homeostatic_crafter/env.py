@@ -124,6 +124,7 @@ class Env(BaseClass):
             'daylight': self._world.daylight,
             'step': self._step,
             'player_health': self._player.health,
+            'episodes': self._episode,
         }
         return self._obs()
     
@@ -173,6 +174,7 @@ class Env(BaseClass):
             'daylight'       : self._world.daylight,
             'step'        : self._step,
             'player_health': self._player.health,
+            'episodes': self._episode,
         }
         if not self._reward:
             reward = 0.0

@@ -22,6 +22,7 @@ class AnalysisCallback(BaseCallback):
         self.wake_ups = 0
         self.death_count = 0
         self.achievements_unlocked = defaultdict(int)
+        self.episodes = 0
 
     def _on_step(self):
         # Access info from the environment
@@ -58,6 +59,8 @@ class AnalysisCallback(BaseCallback):
         
         self.healths.append(info.get('player_health', 0))
         self.positions.append(info.get('player_pos', (0, 0)))
+        if 'episodes' in info:
+            self.episodes = max(self.episodes, info['episodes'])  
         
         if self.n_calls > 0 and self.n_calls % self.log_interval == 0:
             metrics = self.compute_metrics()
@@ -89,6 +92,7 @@ class AnalysisCallback(BaseCallback):
             'total_wake_ups': self.wake_ups,
             'total_stones_placed': self.place_stone_actions,
             'total_deaths': self.death_count,
+            'total_episodes': self.episodes,
         }
 
 def main():
@@ -108,7 +112,7 @@ def main():
         f"{args.outdir}/{args.env}_eval",
         save_stats=True,
         save_episode=False,
-        save_video=True,
+        save_video=False,
     )
 
     env = DummyVecEnv([lambda: env])
