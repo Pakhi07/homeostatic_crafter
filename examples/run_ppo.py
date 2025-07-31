@@ -6,6 +6,7 @@ from stable_baselines3.common.vec_env import DummyVecEnv, VecTransposeImage
 import numpy as np
 from collections import defaultdict
 import os
+import torch
 
 class AnalysisCallback(BaseCallback):
     def __init__(self, log_interval=4096, verbose=0):
@@ -67,6 +68,7 @@ class AnalysisCallback(BaseCallback):
             for key, value in metrics.items():
                 self.logger.record(f'custom/{key}', value)
             print(f"Step {self.n_calls}: Logged metrics to TensorBoard.")
+            torch.cuda.empty_cache()
 
         return True
 
