@@ -18,7 +18,7 @@ def main():
         env,
         args.outdir,
         save_stats=True,
-        save_video=False,
+        save_video=True,
         save_episode=False
     )
 
