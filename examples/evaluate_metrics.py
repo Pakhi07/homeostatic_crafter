@@ -60,7 +60,7 @@ def main():
     )
 
     env = DummyVecEnv([lambda: env])
-    env = VecTransposeImage(env)
+    # env = VecTransposeImage(env)
 
     model = PPO.load(args.model_path)
 

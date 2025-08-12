@@ -24,10 +24,10 @@ except ImportError:
 # FPS = 30
 
 class Env(BaseClass):
-    # metadata = {
-    #     "render_modes": ["human", "rgb_array"],
-    #     "render_fps"  : FPS,
-    # }
+    metadata = {
+        "render_modes": ["human", "rgb_array"],
+        "render_fps"  : FPS,
+    }
     
     def __init__(
             self,
@@ -38,14 +38,14 @@ class Env(BaseClass):
             length=10000,
             seed=None,
             random_internal=False,
-            # render_mode: Optional[str] = None,
+            render_mode: Optional[str] = None,
             homeostatic=True,
     ):
         view = np.array(view if hasattr(view, '__len__') else (view, view))
         size = np.array(size if hasattr(size, '__len__') else (size, size))
         seed = np.random.randint(0, 2 ** 31 - 1) if seed is None else seed
         self._random_internal = random_internal
-        # self.render_mode = render_mode
+        self.render_mode = render_mode
 
         self._area = area
         self._view = view
@@ -83,7 +83,7 @@ class Env(BaseClass):
     @property
     def observation_space(self):
         return DictSpace({
-            "obs": BoxSpace(0, 255, tuple(self._size) + (3,), np.uint8),
+            "obs": BoxSpace(0, 255, (3,) + tuple(self._size), np.uint8),  # pytorch order
             "measurements": BoxSpace(0, 1, (4,), np.float32),
         })
     
@@ -112,7 +112,8 @@ class Env(BaseClass):
         self._world.add(self._player)
         self._unlocked = set()
         worldgen.generate_world(self._world, self._player)
-        
+
+        reward, intero_now = self.get_reward()
         info = {
             'inventory'   : self._player.inventory.copy(),
             'achievements': self._player.achievements.copy(),
@@ -120,7 +121,7 @@ class Env(BaseClass):
             'semantic'    : self._sem_view(),
             'player_pos'  : self._player.pos,
             'reward'      : None,
-            'interoception': self._last_intero,
+            'interoception': intero_now,
             'daylight': self._world.daylight,
             'step': self._step,
             'player_health': self._player.health,
@@ -169,7 +170,7 @@ class Env(BaseClass):
             'discount'    : 1 - float(dead),
             'semantic'    : self._sem_view(),
             'player_pos'  : self._player.pos,
-            'reward': reward if self._homeostatic else 0,
+            'reward': reward,
             'interoception': intero_now,
             'daylight'       : self._world.daylight,
             'step'        : self._step,
@@ -193,6 +194,9 @@ class Env(BaseClass):
         return drive(last_norm_intero) - drive(norm_intero), self._player.get_interoception()
         
     def render(self, size=None):
+        return self.get_img(size).transpose((1, 2, 0))  # (c, w, h) --> (w, h, c)
+
+    def get_img(self, size=None):
         size = size or self._size
         unit = size // self._view
         canvas = np.zeros(tuple(size) + (3,), np.uint8)
@@ -202,10 +206,10 @@ class Env(BaseClass):
         border = (size - (size // self._view) * self._view) // 2
         (x, y), (w, h) = border, view.shape[:2]
         canvas[x: x + w, y: y + h] = view
-        return canvas  # (h, w, c) -> (c, w, h)
+        return canvas.transpose((2, 1, 0))  # (h, w, c) -> (c, w, h)
 
     def _obs(self, reset=False):
-        vision = self.render()
+        vision = self.get_img()
         norm_intero = self._player.get_interoception() / self._intero_normalizer
 
         return {"obs": vision,

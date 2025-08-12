@@ -131,7 +131,7 @@ def main():
     )
 
     env = DummyVecEnv([lambda: env])
-    env = VecTransposeImage(env)
+    # env = VecTransposeImage(env)
 
     model = stable_baselines3.PPO(
         'MultiInputPolicy', 
@@ -140,7 +140,8 @@ def main():
         tensorboard_log=args.outdir,
         seed=args.seed)
 
-    callback = CallbackList([AnalysisCallback(log_interval=4096), checkpoint_callback])
+    analysis_callback = AnalysisCallback(log_interval=4096)
+    callback = CallbackList([analysis_callback, checkpoint_callback])
     
     print(f"Starting {args.env} training with seed {args.seed}. Logs in {args.outdir}")  
     
@@ -156,7 +157,7 @@ def main():
             print(f"Layer: {name}, Shape: {param.shape}")
     print("-----------------------------\n")
 
-    metrics = callback.compute_metrics()
+    metrics = analysis_callback.compute_metrics()
     print(f"Final {args.env} Seed {args.seed} Metrics:")
     for key, value in metrics.items():
         print(f"{key}: {value}")

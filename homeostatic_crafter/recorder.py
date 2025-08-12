@@ -7,11 +7,10 @@ import numpy as np
 
 
 class Recorder:
+
   def __init__(
       self, env, directory, save_stats=True, save_video=True,
-      save_episode=True, video_size=(512, 512)
-  ):
-    self._current_obs = None
+      save_episode=True, video_size=(512, 512)):
     if directory and save_stats:
       env = StatsRecorder(env, directory)
     if directory and save_video:
@@ -24,26 +23,6 @@ class Recorder:
     if name.startswith('__'):
       raise AttributeError(name)
     return getattr(self._env, name)
-
-  @property
-  def obs(self):
-      """Return the current observation."""
-      return self._current_obs
-
-  @property
-  def env(self):
-      """Return the underlying environment."""
-      return self._env
-
-  def reset(self):
-      obs = self._env.reset()
-      self._current_obs = obs  # Update current observation
-      return obs
-
-  def step(self, action):
-      obs, reward, done, info = self._env.step(action)
-      self._current_obs = obs  # Update current observation
-      return obs, reward, done, info
 
 
 class StatsRecorder:
@@ -138,6 +117,9 @@ class EpisodeRecorder:
     return obs
 
   def step(self, action):
+
+
+
     obs, reward, done, info = self._env.step(action)
     transition = {
         'action': action, 'image': obs, 'reward': reward, 'done': done,
@@ -157,6 +139,7 @@ class EpisodeRecorder:
 
   def _save(self):
     filename = str(self._directory / (self._env.episode_name + '.npz'))
+    
     for key, value in self._episode[1].items():
       if key not in self._episode[0]:
         self._episode[0][key] = np.zeros_like(value)
