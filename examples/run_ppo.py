@@ -2,7 +2,7 @@ import argparse
 import homeostatic_crafter
 import stable_baselines3
 from stable_baselines3.common.callbacks import BaseCallback, CheckpointCallback, CallbackList
-from stable_baselines3.common.vec_env import DummyVecEnv
+from stable_baselines3.common.vec_env import DummyVecEnv, VecTransposeImage
 import numpy as np
 from collections import defaultdict
 import os
@@ -27,27 +27,33 @@ class AnalysisCallback(BaseCallback):
         self.episodes = 0
 
     def _on_step(self):
+        # Access info from the environment
         info = self.locals['infos'][-1]
         action = self.locals['actions'][-1]
         action_name = self.training_env.get_attr('action_names')[0][action]
         
         if action_name == 'place_stone':
             self.place_stone_actions += 1
+        
         if info.get('discount') == 0.0:
             self.death_count += 1
 
+        # Check for newly unlocked achievements in this step
         current_achievements = info.get('achievements', {})
         if current_achievements.get('defeat_zombie', 0) > self.achievements_unlocked.get('defeat_zombie', 0):
             self.zombies_defeated += 1
+        
         if current_achievements.get('defeat_skeleton', 0) > self.achievements_unlocked.get('defeat_skeleton', 0):
             self.skeletons_defeated += 1
+
         if current_achievements.get('wake_up', 0) > self.achievements_unlocked.get('wake_up', 0):
             self.wake_ups += 1
-
+            
+        # Update our running count of achievements for the next step (only one line needed)
         self.achievements_unlocked.update(current_achievements)
 
         self.rewards.append(info.get('reward', 0))
-        self.actions.append(action)
+        self.actions.append(action) # Use the action variable we already have
         
         obs = self.locals['new_obs']['obs'][0]
         state_key = str(obs.tobytes())
@@ -57,12 +63,13 @@ class AnalysisCallback(BaseCallback):
         self.positions.append(info.get('player_pos', (0, 0)))
         if 'episodes' in info:
             self.episodes = max(self.episodes, info['episodes'])  
-
+        
         if self.n_calls > 0 and self.n_calls % self.log_interval == 0:
             metrics = self.compute_metrics()
             for key, value in metrics.items():
                 self.logger.record(f'custom/{key}', value)
             print(f"Step {self.n_calls}: Logged metrics to TensorBoard.")
+            
             self.rewards.clear()
             self.healths.clear()
             self.positions.clear()
@@ -95,9 +102,7 @@ class AnalysisCallback(BaseCallback):
             'total_deaths': self.death_count,
             'total_episodes': self.episodes,
         }
-
 def run_training(args, hybrid_lambda):
-    # Safety check
     assert 0.0 <= hybrid_lambda <= 1.0, "hybrid_lambda must be in [0,1]"
 
     np.random.seed(args.seed)
@@ -125,7 +130,7 @@ def run_training(args, hybrid_lambda):
     model = stable_baselines3.PPO(
         'MultiInputPolicy', 
         env, 
-        verbose=0, 
+        verbose=1, 
         tensorboard_log=args.outdir,
         seed=args.seed
     )
@@ -149,7 +154,7 @@ def main():
     parser.add_argument('--seed', type=int, default=0)
     args = parser.parse_args()
 
-    lambda_values = np.linspace(0, 1, 6)  # Sweep from 0 to 1 in 0.2 steps
+    lambda_values = [0.0, 0.25, 0.5, 0.75, 1.0]  # Sweep from 0 to 1 in 0.2 steps
     results = {}
 
     for lam in lambda_values:
