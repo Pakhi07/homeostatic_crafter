@@ -8,6 +8,9 @@ from . import engine
 from . import objects
 from . import worldgen
 
+global FPS
+
+FPS = 30
 
 try:
   import gym
@@ -21,12 +24,11 @@ except ImportError:
   DictSpace = collections.namedtuple('DictSpace', 'spaces')
   BaseClass = object
 
-# FPS = 30
 
 class Env(BaseClass):
     metadata = {
         "render_modes": ["human", "rgb_array"],
-        "render_fps"  : FPS,
+        "render_fps"  : 30,
     }
     
     def __init__(
@@ -40,6 +42,7 @@ class Env(BaseClass):
             random_internal=False,
             render_mode: Optional[str] = None,
             homeostatic=True,
+            hybrid_lambda: Optional[float] = None,
     ):
         view = np.array(view if hasattr(view, '__len__') else (view, view))
         size = np.array(size if hasattr(size, '__len__') else (size, size))
@@ -55,6 +58,10 @@ class Env(BaseClass):
         self._seed = seed
         self._episode = 0
         self._homeostatic = homeostatic
+        self.hybrid_lambda = hybrid_lambda
+        if hybrid_lambda is not None:
+            assert 0.0 <= hybrid_lambda <= 1.0, "hybrid_lambda must be in [0,1] or None"
+
         self._world = engine.World(area, constants.materials, (12, 12))
         self._textures = engine.Textures(constants.root / 'assets')
         item_rows = int(np.ceil(len(constants.items) / view[0]))
@@ -146,10 +153,10 @@ class Env(BaseClass):
         self._player.update_interoception()
         obs = self._obs()
 
-        if self._homeostatic:
-            reward, intero_now = self.get_reward()
-        else:
-            reward = (self._player.health - self._last_health) / 10  # original reward
+        # if self._homeostatic:
+        #     reward, intero_now = self.get_reward()
+        # else:
+        #     reward = (self._player.health - self._last_health) / 10  # original reward
 
         self._last_intero = self._player.get_interoception()
         self._last_health = self._player.health
@@ -159,8 +166,30 @@ class Env(BaseClass):
             if count > 0 and name not in self._unlocked}
         if unlocked:
             self._unlocked |= unlocked
-            if not self._homeostatic:
-                reward += 1.0  # original reward
+            # if not self._homeostatic:
+            #     reward += 1.0  # original reward
+
+        if self._homeostatic or (self.hybrid_lambda is not None):
+            internal_reward, intero_now = self.get_reward()
+
+        # compute external/task reward
+        external_reward = (self._player.health - self._last_health) / 10.0
+        # award achievement bonus into the external component (so hybrid mixing makes sense)
+        if unlocked:
+            external_reward += 1.0
+
+        # combine according to hybrid_lambda / fallback to previous behavior
+        if self.hybrid_lambda is None:
+            # keep old behavior for backward compatibility:
+            if self._homeostatic:
+                reward = internal_reward
+            else:
+                reward = external_reward
+        else:
+            alpha = float(self.hybrid_lambda)
+            reward = alpha * internal_reward + (1.0 - alpha) * external_reward
+
+
         dead = self._player.health <= 0
         over = self._length and self._step >= self._length
         done = dead or over

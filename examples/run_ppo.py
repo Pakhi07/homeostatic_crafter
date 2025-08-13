@@ -2,11 +2,12 @@ import argparse
 import homeostatic_crafter
 import stable_baselines3
 from stable_baselines3.common.callbacks import BaseCallback, CheckpointCallback, CallbackList
-from stable_baselines3.common.vec_env import DummyVecEnv, VecTransposeImage
+from stable_baselines3.common.vec_env import DummyVecEnv
 import numpy as np
 from collections import defaultdict
 import os
 import torch
+import matplotlib.pyplot as plt
 
 class AnalysisCallback(BaseCallback):
     def __init__(self, log_interval=4096, verbose=0):
@@ -26,33 +27,27 @@ class AnalysisCallback(BaseCallback):
         self.episodes = 0
 
     def _on_step(self):
-        # Access info from the environment
         info = self.locals['infos'][-1]
         action = self.locals['actions'][-1]
         action_name = self.training_env.get_attr('action_names')[0][action]
         
         if action_name == 'place_stone':
             self.place_stone_actions += 1
-        
         if info.get('discount') == 0.0:
             self.death_count += 1
 
-        # Check for newly unlocked achievements in this step
         current_achievements = info.get('achievements', {})
         if current_achievements.get('defeat_zombie', 0) > self.achievements_unlocked.get('defeat_zombie', 0):
             self.zombies_defeated += 1
-        
         if current_achievements.get('defeat_skeleton', 0) > self.achievements_unlocked.get('defeat_skeleton', 0):
             self.skeletons_defeated += 1
-
         if current_achievements.get('wake_up', 0) > self.achievements_unlocked.get('wake_up', 0):
             self.wake_ups += 1
-            
-        # Update our running count of achievements for the next step (only one line needed)
+
         self.achievements_unlocked.update(current_achievements)
 
         self.rewards.append(info.get('reward', 0))
-        self.actions.append(action) # Use the action variable we already have
+        self.actions.append(action)
         
         obs = self.locals['new_obs']['obs'][0]
         state_key = str(obs.tobytes())
@@ -62,13 +57,12 @@ class AnalysisCallback(BaseCallback):
         self.positions.append(info.get('player_pos', (0, 0)))
         if 'episodes' in info:
             self.episodes = max(self.episodes, info['episodes'])  
-        
+
         if self.n_calls > 0 and self.n_calls % self.log_interval == 0:
             metrics = self.compute_metrics()
             for key, value in metrics.items():
                 self.logger.record(f'custom/{key}', value)
             print(f"Step {self.n_calls}: Logged metrics to TensorBoard.")
-            
             self.rewards.clear()
             self.healths.clear()
             self.positions.clear()
@@ -102,80 +96,76 @@ class AnalysisCallback(BaseCallback):
             'total_episodes': self.episodes,
         }
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--env', type=str, default='homeostatic', choices=['crafter', 'homeostatic'])
-    parser.add_argument('--outdir', type=str, default='logdir/homeostatic_reward-ppo/0')
-    parser.add_argument('--steps', type=float, default=250000)  # Updated to 250k
-    parser.add_argument('--seed', type=int, default=0)
-    args = parser.parse_args()
+def run_training(args, hybrid_lambda):
+    # Safety check
+    assert 0.0 <= hybrid_lambda <= 1.0, "hybrid_lambda must be in [0,1]"
 
     np.random.seed(args.seed)
 
     checkpoint_callback = CheckpointCallback(
-        save_freq=100_000,  # save every 100k steps (adjust as needed)
+        save_freq=100_000,
         save_path=args.outdir,
-        name_prefix=f"{args.env}_seed{args.seed}_checkpoint",
+        name_prefix=f"{args.env}_lambda{hybrid_lambda}_seed{args.seed}_checkpoint",
         save_replay_buffer=True,
         save_vecnormalize=True,
     )
     
     env_class = homeostatic_crafter.Env
-    env = env_class(seed=args.seed)
+    env = env_class(seed=args.seed, hybrid_lambda=hybrid_lambda)
     env = homeostatic_crafter.Recorder(
         env, 
-        f"{args.outdir}/{args.env}_eval/seed_{args.seed}",
+        f"{args.outdir}/{args.env}_lambda{hybrid_lambda}_eval/seed_{args.seed}",
         save_stats=True,
         save_episode=False,
         save_video=False,
     )
 
     env = DummyVecEnv([lambda: env])
-    # env = VecTransposeImage(env)
 
     model = stable_baselines3.PPO(
         'MultiInputPolicy', 
         env, 
-        verbose=1, 
+        verbose=0, 
         tensorboard_log=args.outdir,
-        seed=args.seed)
+        seed=args.seed
+    )
 
     analysis_callback = AnalysisCallback(log_interval=4096)
     callback = CallbackList([analysis_callback, checkpoint_callback])
     
-    print(f"Starting {args.env} training with seed {args.seed}. Logs in {args.outdir}")  
+    print(f"Starting training: lambda={hybrid_lambda}, seed={args.seed}")  
     
-    model.learn(
-        total_timesteps=int(args.steps), 
-        callback=callback
-    )
-    print(f"{args.env} training finished.")
-
-    print("\n--- Checking Model Parameters ---")
-    for name, param in model.policy.named_parameters():
-        if param.requires_grad:
-            print(f"Layer: {name}, Shape: {param.shape}")
-    print("-----------------------------\n")
-
+    model.learn(total_timesteps=int(args.steps), callback=callback)
+    
     metrics = analysis_callback.compute_metrics()
-    print(f"Final {args.env} Seed {args.seed} Metrics:")
-    for key, value in metrics.items():
-        print(f"{key}: {value}")
+    print(f"Final metrics for lambda={hybrid_lambda}: {metrics}")
+    return metrics
 
-    try:
-        final_log_path = model.logger.dir
-    
-        os.makedirs(final_log_path, exist_ok=True)
-        
-        with open(f"{final_log_path}/{args.env}_seed{args.seed}_metrics.txt", 'w') as f:
-            for key, value in metrics.items():
-                f.write(f"{key}: {value}\n")
-                
-        model.save(f"{final_log_path}/{args.env}_seed{args.seed}_model")
-        
-        print(f"Metrics and model saved successfully to {final_log_path}")
-    except Exception as e:
-        print(f"Warning: Could not save to {args.outdir}: {e}")
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--env', type=str, default='homeostatic', choices=['crafter', 'homeostatic'])
+    parser.add_argument('--outdir', type=str, default='logdir/lambda_sweep')
+    parser.add_argument('--steps', type=float, default=100000)
+    parser.add_argument('--seed', type=int, default=0)
+    args = parser.parse_args()
+
+    lambda_values = np.linspace(0, 1, 6)  # Sweep from 0 to 1 in 0.2 steps
+    results = {}
+
+    for lam in lambda_values:
+        metrics = run_training(args, lam)
+        results[lam] = metrics
+
+    # Plotting example for reward vs lambda
+    rewards = [results[lam]['reward_homeostatic_mean'] for lam in lambda_values]
+    plt.figure(figsize=(6,4))
+    plt.plot(lambda_values, rewards, marker='o')
+    plt.xlabel("Hybrid Lambda")
+    plt.ylabel("Mean Homeostatic Reward")
+    plt.title("Lambda Sweep Performance")
+    plt.grid(True)
+    plt.savefig(f"{args.outdir}/lambda_sweep_reward.png")
+    plt.show()
 
 if __name__ == '__main__':
     main()
