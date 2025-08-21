@@ -102,6 +102,26 @@ class AnalysisCallback(BaseCallback):
             'total_deaths': self.death_count,
             'total_episodes': self.episodes,
         }
+
+def save_plots(metrics_dict, save_dir, env_name, seed):
+    os.makedirs(save_dir, exist_ok=True)
+    
+    # Bar plot for scalar metrics
+    scalar_metrics = {k: v for k, v in metrics_dict.items() if np.isscalar(v)}
+    keys = list(scalar_metrics.keys())
+    values = list(scalar_metrics.values())
+    
+    plt.figure(figsize=(10, 6))
+    plt.barh(keys, values, color='skyblue')
+    plt.xlabel('Value')
+    plt.title(f'{env_name} Final Metrics (Seed {seed})')
+    plt.tight_layout()
+    plt.savefig(os.path.join(save_dir, f"{env_name}_seed{seed}_metrics_bar.png"))
+    plt.close()
+    
+    print(f"Saved metrics plot to {save_dir}")
+
+
 def run_training(args, hybrid_lambda):
     assert 0.0 <= hybrid_lambda <= 1.0, "hybrid_lambda must be in [0,1]"
 
@@ -144,7 +164,25 @@ def run_training(args, hybrid_lambda):
     
     metrics = analysis_callback.compute_metrics()
     print(f"Final metrics for lambda={hybrid_lambda}: {metrics}")
+    try:
+        final_log_path = model.logger.dir
+        os.makedirs(final_log_path, exist_ok=True)
+        
+        with open(f"{final_log_path}/{args.env}_seed{args.seed}_metrics.txt", 'w') as f:
+            for key, value in metrics.items():
+                f.write(f"{key}: {value}\n")
+                
+        save_plots(metrics, final_log_path, args.env, args.seed)
+        model.save(f"{final_log_path}/{args.env}_seed{args.seed}_model")
+        
+        print(f"Metrics, plots, and model saved successfully to {final_log_path}")
+    except Exception as e:
+        print(f"Warning: Could not save to {args.outdir}: {e}")
+
     return metrics
+
+
+
 
 def main():
     parser = argparse.ArgumentParser()
@@ -154,7 +192,7 @@ def main():
     parser.add_argument('--seed', type=int, default=0)
     args = parser.parse_args()
 
-    lambda_values = [0.0, 0.25, 0.5, 0.75, 1.0]  # Sweep from 0 to 1 in 0.2 steps
+    lambda_values = [0.75, 1.0]  # Sweep from 0 to 1 in 0.2 steps
     results = {}
 
     for lam in lambda_values:
@@ -162,15 +200,16 @@ def main():
         results[lam] = metrics
 
     # Plotting example for reward vs lambda
-    rewards = [results[lam]['reward_homeostatic_mean'] for lam in lambda_values]
-    plt.figure(figsize=(6,4))
-    plt.plot(lambda_values, rewards, marker='o')
-    plt.xlabel("Hybrid Lambda")
-    plt.ylabel("Mean Homeostatic Reward")
-    plt.title("Lambda Sweep Performance")
-    plt.grid(True)
-    plt.savefig(f"{args.outdir}/lambda_sweep_reward.png")
-    plt.show()
+    # rewards = [results[lam]['reward_homeostatic_mean'] for lam in lambda_values]
+
+    # plt.figure(figsize=(6,4))
+    # plt.plot(lambda_values, rewards, marker='o')
+    # plt.xlabel("Hybrid Lambda")
+    # plt.ylabel("Mean Homeostatic Reward")
+    # plt.title("Lambda Sweep Performance")
+    # plt.grid(True)
+    # plt.savefig(f"{args.outdir}/lambda_sweep_reward.png")
+    # plt.show()
 
 if __name__ == '__main__':
     main()
