@@ -136,6 +136,33 @@ class Env(BaseClass):
         }
         return self._obs()
     
+    def _calculate_dynamic_lambda(self, norm_intero):
+        """
+        Calculates a dynamic lambda based on the agent's homeostatic drive.
+        """
+        
+        # This is the same drive calculation you have in get_reward()
+        def drive(x):
+            r = 0
+            for i, val in enumerate(['health', 'food', 'drink', 'energy']):
+                r += constants.homeostasis['scale'][val] * (x[i] - constants.homeostasis['target'][val]) ** 2
+            return r
+
+        current_drive = drive(norm_intero)
+        
+        # --- Sigmoid Function Parameters (tune these) ---
+        # k determines the steepness of the transition. Higher k = more of a switch.
+        k = 10.0 
+        # threshold is the drive value at which lambda is 0.5.
+        # A small drive value might be around 0.05, a large one > 0.5
+        threshold = 0.1 
+
+        # --- Calculate lambda ---
+        # The value is passed through a sigmoid to smoothly map it to [0, 1]
+        dynamic_lambda = 1 / (1 + np.exp(-k * (current_drive - threshold)))
+        
+        return dynamic_lambda, current_drive
+        
     def step(self, action):
         self._step += 1
         self._update_time()
@@ -145,18 +172,23 @@ class Env(BaseClass):
                 obj.update()
         if self._step % 10 == 0:
             for chunk, objs in self._world.chunks.items():
-                # xmin, xmax, ymin, ymax = chunk
-                # center = (xmax - xmin) // 2, (ymax - ymin) // 2
-                # if self._player.distance(center) < 4 * max(self._view):
                 self._balance_chunk(chunk, objs)
         
         self._player.update_interoception()
         obs = self._obs()
 
-        # if self._homeostatic:
-        #     reward, intero_now = self.get_reward()
-        # else:
-        #     reward = (self._player.health - self._last_health) / 10  # original reward
+        # --- NEW: DYNAMIC LAMBDA LOGIC ---
+        # First, get the current and previous normalized interoception values
+        norm_intero = self._player.get_interoception() / self._intero_normalizer
+        last_norm_intero = self._last_intero / self._intero_normalizer
+
+        # Calculate the dynamic lambda and the current drive
+        alpha, current_drive = self._calculate_dynamic_lambda(norm_intero)
+        
+        # Calculate the change in drive for the internal reward
+        last_drive = self._calculate_dynamic_lambda(last_norm_intero)[1] # Re-calc drive for prev state
+        internal_reward = last_drive - current_drive
+        # --- END OF NEW LOGIC ---
 
         self._last_intero = self._player.get_interoception()
         self._last_health = self._player.health
@@ -166,29 +198,14 @@ class Env(BaseClass):
             if count > 0 and name not in self._unlocked}
         if unlocked:
             self._unlocked |= unlocked
-            # if not self._homeostatic:
-            #     reward += 1.0  # original reward
 
-        if self._homeostatic or (self.hybrid_lambda is not None):
-            internal_reward, intero_now = self.get_reward()
-
-        # compute external/task reward
+        # Compute external/task reward
         external_reward = (self._player.health - self._last_health) / 10.0
-        # award achievement bonus into the external component (so hybrid mixing makes sense)
         if unlocked:
             external_reward += 1.0
 
-        # combine according to hybrid_lambda / fallback to previous behavior
-        if self.hybrid_lambda is None:
-            # keep old behavior for backward compatibility:
-            if self._homeostatic:
-                reward = internal_reward
-            else:
-                reward = external_reward
-        else:
-            alpha = float(self.hybrid_lambda)
-            reward = alpha * internal_reward + (1.0 - alpha) * external_reward
-
+        # Combine rewards using the new state-dependent alpha (dynamic lambda)
+        reward = alpha * internal_reward + (1.0 - alpha) * external_reward
 
         dead = self._player.health <= 0
         over = self._length and self._step >= self._length
@@ -200,11 +217,13 @@ class Env(BaseClass):
             'semantic'    : self._sem_view(),
             'player_pos'  : self._player.pos,
             'reward': reward,
-            'interoception': intero_now,
+            'interoception': self._player.get_interoception(), # Use the raw interoception for info
             'daylight'       : self._world.daylight,
             'step'        : self._step,
             'player_health': self._player.health,
             'episodes': self._episode,
+            'dynamic_lambda': alpha, # Add for debugging!
+            'drive': current_drive,    # Add for debugging!
         }
         if not self._reward:
             reward = 0.0
